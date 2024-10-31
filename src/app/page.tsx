@@ -1,7 +1,11 @@
-import Image from "next/image";
+"use client"
+
+import DragAndDrop from "@/components/DragAndDrop";
 
 export default function Home() {
   return (
-    null
+    <div>
+      <DragAndDrop />
+    </div>
   );
 }
