@@ -1,11 +1,12 @@
 "use client";
-import React, { useState, DragEvent, ChangeEvent } from 'react';
+import React, { useState, useEffect, DragEvent, ChangeEvent } from "react";
 
 const DragAndDrop: React.FC = () => {
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [fileKey, setFileKey] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleDrag = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -39,14 +40,13 @@ const DragAndDrop: React.FC = () => {
   // Fonction d'upload vers S3 avec suivi de progression
   async function uploadToS3() {
     if (!file) return;
-    
-    // Requête pour obtenir l'URL signée de l'API Next.js
-    const response = await fetch('/api/media/upload', {
-      method: 'POST',
+
+    const response = await fetch("/api/media/upload", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({}) // Aucun body spécifique à envoyer ici, peut être ajusté
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
@@ -56,18 +56,14 @@ const DragAndDrop: React.FC = () => {
     const data = await response.json();
     const { uploadUrl, Key } = data;
 
-    // Utilisation de XMLHttpRequest pour suivre la progression
     const xhr = new XMLHttpRequest();
 
     return new Promise<string>((resolve, reject) => {
       let lastLoggedPercent = 0;
 
-      // Suivre l'événement 'progress'
-      xhr.upload.addEventListener('progress', (event) => {
+      xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
           const percentComplete = Math.round((event.loaded / event.total) * 100);
-
-          // Logger toutes les 2% ou toutes les 2 secondes selon la progression
           if (percentComplete !== lastLoggedPercent && percentComplete % 2 === 0) {
             setUploadProgress(percentComplete);
             lastLoggedPercent = percentComplete;
@@ -75,37 +71,63 @@ const DragAndDrop: React.FC = () => {
         }
       });
 
-      // Surveiller l'achèvement de l'upload
-      xhr.addEventListener('load', () => {
+      xhr.addEventListener("load", () => {
         if (xhr.status === 200) {
-          console.log('Upload complete');
-          setFileKey(Key); // Mettre à jour le fileKey après upload réussi
-          resolve(Key); // Résoudre la promesse avec la clé du fichier
-          setUploadProgress(null); // Réinitialiser la progression après upload
+          setFileKey(Key); // Stocker la clé pour vérification
+          setUploadProgress(null); // Réinitialiser la progression
+          setIsProcessing(true); // Activer la vérification périodique
+          resolve(Key); // Résoudre la promesse avec la clé
         } else {
           reject(new Error(`Upload failed with status: ${xhr.status}`));
         }
       });
 
-      // Surveiller les erreurs d'upload
-      xhr.addEventListener('error', () => {
-        reject(new Error('Upload failed'));
+      xhr.addEventListener("error", () => {
+        reject(new Error("Upload failed"));
       });
 
-      // Configurer et démarrer l'upload
-      xhr.open('PUT', uploadUrl, true);
-      xhr.setRequestHeader('Content-Type', file.type); // Type MIME réel du fichier vidéo
+      xhr.open("PUT", uploadUrl, true);
+      xhr.setRequestHeader("Content-Type", file.type); // Type MIME réel
       xhr.send(file); // Envoyer le fichier à S3 via l'URL signée
     });
   }
 
-  // Fonction de gestion du clic sur le bouton d'upload
+  // Fonction de vérification périodique du traitement
+  useEffect(() => {
+    if (isProcessing && fileKey) {
+      const url = fileKey.replace(/^queue\//, "");
+      const interval = setInterval(async () => {
+        const response = await fetch("/api/media/download", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            fileKey: `processed/${url}`,
+          }),
+        });
+
+        if (response.status === 200) {
+          const { downloadUrl } = await response.json();
+          if (downloadUrl) {
+            clearInterval(interval);
+            window.location.href = downloadUrl;
+            setIsProcessing(false);
+          } else {
+            console.error("DEBUG: URL de téléchargement non définie");
+          }
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [isProcessing, fileKey]);
+
   const handleUpload = async () => {
     try {
-      const key = await uploadToS3();
-      console.log('File uploaded successfully. Key:', key);
+      await uploadToS3();
     } catch (error) {
-      console.error('Error uploading file:', error);
+      console.error("Error uploading file:", error);
     }
   };
 
@@ -139,7 +161,6 @@ const DragAndDrop: React.FC = () => {
 
       {file && (
         <div className="mt-5 flex flex-col items-center">
-          {/* Affichage de la progression d'upload */}
           {uploadProgress !== null && (
             <p className="text-gray-700 mb-2">Upload Progress: {uploadProgress}%</p>
           )}
@@ -151,12 +172,6 @@ const DragAndDrop: React.FC = () => {
             Upload Video
           </button>
         </div>
-      )}
-
-      {fileKey && (
-        <p className="text-green-500 mt-3">
-          File uploaded successfully! Key: {fileKey}
-        </p>
       )}
     </div>
   );
