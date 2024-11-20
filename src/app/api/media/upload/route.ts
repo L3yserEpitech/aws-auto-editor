@@ -15,7 +15,8 @@ const s3Client = new S3Client({
 export async function POST(req: NextRequest) {
   console.log("1");
   const fileType = 'video/mp4'; // Type de fichier par défaut
-  const Key = `queue/${randomUUID()}.mp4`; // Générer un nom de fichier unique dans le sous-dossier "queue"
+  const Key = `queue/${randomUUID()}--export_premiere-.mp4`;
+  console.log("Key : ", Key)
 
   const s3Params = {
     Bucket: process.env.BUCKET_NAME!,
@@ -25,7 +26,6 @@ export async function POST(req: NextRequest) {
 
   try {
     // Utiliser le presigner pour générer l'URL signée
-    console.log("2");
     const uploadUrl = await getSignedUrl(s3Client, new PutObjectCommand(s3Params), { expiresIn: 60 });
 
     // Retourner l'URL signée pour que le client puisse uploader
